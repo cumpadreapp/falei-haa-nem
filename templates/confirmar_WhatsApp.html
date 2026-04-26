@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card shadow">
+            <div class="card-header bg-info text-white text-center">
+                <h4><i class="fas fa-check-circle"></i> Confirmar Código</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Código de 6 dígitos</label>
+                        <input type="text" name="codigo" class="form-control" placeholder="000000" maxlength="6" required>
+                        <small class="text-muted">Digite o código recebido no WhatsApp.</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Confirmar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

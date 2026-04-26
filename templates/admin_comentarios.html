@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card"><div class="card-header bg-success text-white"><h4><i class="fas fa-comments"></i> Comentários</h4></div>
+<div class="card-body">
+    <table class="table">
+        <thead><tr><th>Autor</th><th>Postagem</th><th>Comentário</th><th>Data</th><th>Ação</th></tr></thead>
+        <tbody>{% for c in comentarios %}
+        <tr>
+            <td><img src="{{ url_for('static', filename=c.autor.foto) }}" width="30" class="rounded-circle foto-perfil-click" data-user-id="{{ c.autor.id }}" style="cursor:pointer"> {{ c.autor.nome }}</td>
+            <td>{{ c.postagem.titulo[:30] }}</td>
+            <td>{{ c.texto[:50] }}</td>
+            <td>{{ c.data.strftime('%d/%m/%y %H:%M') }}</td>
+            <td><form method="POST" action="{{ url_for('admin_excluir_comentario', comentario_id=c.id) }}" onsubmit="return confirm('Excluir?')"><button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button></form></td>
+        </tr>{% endfor %}</tbody>
+    </table>
+</div></div>
+{% endblock %}

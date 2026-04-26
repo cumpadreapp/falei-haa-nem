@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4><i class="fas fa-user-circle"></i> Meu Perfil</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <!-- Foto do perfil -->
+                    <div class="text-center mb-4">
+                        <img src="{{ url_for('static', filename=usuario.foto) }}" 
+                             class="rounded-circle foto-perfil-click mb-2" 
+                             width="120" height="120" 
+                             style="object-fit: cover; cursor: pointer;"
+                             data-user-id="{{ usuario.id }}">
+                        <div class="mt-2">
+                            <label for="foto" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-camera"></i> Trocar foto
+                            </label>
+                            <input type="file" name="foto" id="foto" class="d-none" accept="image/*">
+                        </div>
+                    </div>
+
+                    <!-- Nome -->
+                    <div class="mb-3">
+                        <label class="form-label">Nome de exibição</label>
+                        <input type="text" name="nome" class="form-control" value="{{ usuario.nome }}" required>
+                    </div>
+
+                    <!-- Biografia -->
+                    <div class="mb-3">
+                        <label class="form-label">Biografia</label>
+                        <textarea name="biografia" class="form-control" rows="4" placeholder="Fale um pouco sobre você...">{{ usuario.biografia }}</textarea>
+                        <small class="text-muted">Campo em destaque – será exibido no seu perfil.</small>
+                    </div>
+
+                    <!-- Redes sociais -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-header bg-success text-white">
+                            <i class="fas fa-share-alt"></i> Redes sociais
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <label><i class="fab fa-instagram text-danger"></i> Instagram</label>
+                                <input type="text" name="instagram" class="form-control" value="{{ redes.instagram }}" placeholder="https://instagram.com/seu_usuario">
+                            </div>
+                            <div class="mb-2">
+                                <label><i class="fab fa-facebook text-primary"></i> Facebook</label>
+                                <input type="text" name="facebook" class="form-control" value="{{ redes.facebook }}" placeholder="https://facebook.com/seu_perfil">
+                            </div>
+                            <div class="mb-2">
+                                <label><i class="fab fa-twitter text-info"></i> Twitter / X</label>
+                                <input type="text" name="twitter" class="form-control" value="{{ redes.twitter }}" placeholder="https://twitter.com/seu_usuario">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-save"></i> Salvar alterações
+                    </button>
+                </form>
+
+                <hr>
+                <div class="text-center text-muted">
+                    <small><i class="fas fa-calendar-alt"></i> Cadastrado desde {{ usuario.data_cadastro.strftime('%d/%m/%Y') }}</small><br>
+                    <small><i class="fab fa-whatsapp"></i> WhatsApp: {{ usuario.telefone }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('foto').addEventListener('change', function(e) {
+        if (e.target.files && e.target.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = document.querySelector('.foto-perfil-click');
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(e.target.files[0]);
+            // O formulário será submetido normalmente com o arquivo
+        }
+    });
+</script>
+{% endblock %}

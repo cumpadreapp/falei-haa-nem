@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"><i class="fas fa-tachometer-alt"></i> Painel Administrativo</h1>
+        
+        <!-- Cards Estatísticas -->
+        <div class="row mb-4">
+            <div class="col-md-3"><div class="card text-white bg-primary"><div class="card-body"><h5>Postagens</h5><h2>{{ stats.total_postagens }}</h2></div></div></div>
+            <div class="col-md-3"><div class="card text-white bg-success"><div class="card-body"><h5>Visualizações</h5><h2>{{ stats.total_visualizacoes }}</h2></div></div></div>
+            <div class="col-md-3"><div class="card text-dark bg-warning"><div class="card-body"><h5>Comentários</h5><h2>{{ stats.total_comentarios }}</h2></div></div></div>
+            <div class="col-md-3"><div class="card text-white bg-danger"><div class="card-body"><h5>Usuários</h5><h2>{{ stats.total_usuarios }}</h2></div></div></div>
+        </div>
+
+        <!-- Abas -->
+        <ul class="nav nav-tabs" id="adminTab" role="tablist">
+            <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#banner">Banner</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#postagens">Postagens</button></li>
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#novaPostagem">Nova Postagem</button></li>
+        </ul>
+
+        <div class="tab-content mt-3">
+            <!-- Aba Banner -->
+            <div class="tab-pane fade show active" id="banner">
+                <div class="card">
+                    <div class="card-body">
+                        <form action="{{ url_for('atualizar_banner') }}" method="POST" enctype="multipart/form-data">
+                            <div class="row">
+                                <div class="col-md-6"><label>Imagem</label><input type="file" name="imagem" class="form-control" accept="image/*"></div>
+                                <div class="col-md-4"><label>Link</label><input type="text" name="link" class="form-control" placeholder="https://"></div>
+                                <div class="col-md-2"><label>&nbsp;</label><button type="submit" class="btn btn-primary w-100">Atualizar</button></div>
+                            </div>
+                        </form>
+                        {% if banner %}<div class="mt-3"><img src="{{ url_for('static', filename=banner.imagem) }}" style="max-height: 100px;"></div>{% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aba Postagens -->
+            <div class="tab-pane fade" id="postagens">
+                <div class="card"><div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead><tr><th>ID</th><th>Título</th><th>Tipo</th><th>Visualizações</th><th>Ações</th></tr></thead>
+                            <tbody>{% for p in postagens %}
+                            <tr><td>{{ p.id }}</td><td>{{ p.titulo[:30] }}</td><td><span class="badge bg-secondary">{{ p.tipo }}</span></td><td>{{ p.visualizacoes }}</td>
+                            <td><form method="POST" action="{{ url_for('excluir_postagem', post_id=p.id) }}" onsubmit="return confirm('Excluir?')"><button class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button></form></td></tr>
+                            {% endfor %}</tbody>
+                        </table>
+                    </div>
+                </div></div>
+            </div>
+
+            <!-- Aba Nova Postagem -->
+            <div class="tab-pane fade" id="novaPostagem">
+                <div class="card"><div class="card-body">
+                    <form action="{{ url_for('nova_postagem') }}" method="POST" enctype="multipart/form-data">
+                        <div class="row">
+                            <div class="col-md-4"><label>Título</label><input type="text" name="titulo" class="form-control" required></div>
+                            <div class="col-md-3"><label>Tipo</label><select name="tipo" id="tipo-post" class="form-control">
+                                <option value="texto">Texto</option><option value="foto">Foto</option><option value="video">Vídeo</option><option value="youtube">YouTube</option><option value="audio">Áudio</option><option value="local">Local</option>
+                            </select></div>
+                            <div class="col-md-5" id="campo-conteudo"><label>Conteúdo Texto</label><textarea name="conteudo_texto" class="form-control" rows="2"></textarea></div>
+                            <div class="col-md-12 mt-2" id="campo-arquivo" style="display:none"><label>Arquivo</label><input type="file" name="arquivo" class="form-control"></div>
+                            <div class="col-md-12 mt-2" id="campo-youtube" style="display:none"><label>YouTube Link</label><input type="text" name="link_youtube" class="form-control"></div>
+                            <div class="col-md-12 mt-2" id="campo-local" style="display:none"><label>Localização</label><input type="text" name="localizacao" class="form-control"></div>
+                            <div class="col-md-12 mt-3"><button type="submit" class="btn btn-success">Publicar</button></div>
+                        </div>
+                    </form>
+                </div></div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.getElementById('tipo-post').addEventListener('change', function(){
+    let t = this.value;
+    document.getElementById('campo-conteudo').style.display = t=='texto' ? 'block' : 'none';
+    document.getElementById('campo-arquivo').style.display = (t=='foto'||t=='video'||t=='audio') ? 'block' : 'none';
+    document.getElementById('campo-youtube').style.display = t=='youtube' ? 'block' : 'none';
+    document.getElementById('campo-local').style.display = t=='local' ? 'block' : 'none';
+});
+</script>
+{% endblock %}

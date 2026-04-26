@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<!-- Banner fixo no topo -->
+<div class="banner-fixo">
+    <div class="container">
+        {% if banner %}
+        <a href="{{ banner.link }}" target="_blank">
+            <img src="{{ url_for('static', filename=banner.imagem) }}" class="img-fluid rounded shadow" alt="Banner">
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Linha do tempo -->
+<div class="row">
+    <div class="col-md-8 mx-auto">
+        <h2 class="text-center mb-4" style="color: #2c3e50;">
+            <i class="fas fa-clock"></i> @
+        </h2>
+        
+        {% for postagem in postagens %}
+        <div class="card mb-4 shadow-sm post-card" data-post-id="{{ postagem.id }}">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-newspaper"></i> {{ postagem.titulo or 'Postagem' }}
+                </h5>
+                <small class="text-muted">
+                    <i class="far fa-calendar-alt"></i> {{ postagem.data_criacao.strftime('%d/%m/%Y às %H:%M') }}
+                </small>
+            </div>
+            <div class="card-body">
+                <!-- Conteúdo da postagem -->
+                {% if postagem.tipo == 'texto' %}
+                    <p class="card-text">{{ postagem.conteudo }}</p>
+                {% elif postagem.tipo == 'foto' and postagem.arquivo %}
+                    <img src="{{ url_for('static', filename=postagem.arquivo) }}" class="img-fluid rounded" alt="Foto">
+                {% elif postagem.tipo == 'video' and postagem.arquivo %}
+                    <video controls class="img-fluid rounded">
+                        <source src="{{ url_for('static', filename=postagem.arquivo) }}" type="video/mp4">
+                    </video>
+                {% elif postagem.tipo == 'youtube' and postagem.link_youtube %}
+                    {% set video_id = postagem.link_youtube.split('v=')[-1] %}
+                    {% if 'youtu.be' in postagem.link_youtube %}
+                        {% set video_id = postagem.link_youtube.split('/')[-1] %}
+                    {% endif %}
+                    {% if '&' in video_id %}
+                        {% set video_id = video_id.split('&')[0] %}
+                    {% endif %}
+                    <div class="ratio ratio-16x9">
+                        <iframe src="https://www.youtube.com/embed/{{ video_id }}" 
+                                title="YouTube video" 
+                                frameborder="0" 
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                allowfullscreen>
+                        </iframe>
+                    </div>
+                {% elif postagem.tipo == 'audio' and postagem.arquivo %}
+                    <audio controls class="w-100">
+                        <source src="{{ url_for('static', filename=postagem.arquivo) }}" type="audio/mpeg">
+                    </audio>
+                {% elif postagem.tipo == 'local' and postagem.localizacao %}
+                    <p><i class="fas fa-map-marker-alt"></i> Local: {{ postagem.localizacao }}</p>
+                {% endif %}
+                
+                <!-- Botão Tô só Observando -->
+                <div class="mt-3 d-flex justify-content-between align-items-center">
+                    <button class="btn btn-observar" data-post-id="{{ postagem.id }}">
+                        <i class="fas fa-eye"></i> Tô só Observando 
+                        <span class="badge bg-warning text-dark">{{ postagem.visualizacoes }}</span>
+                    </button>
+                    
+                    <button class="btn btn-compartilhar" data-post-id="{{ postagem.id }}" data-bs-toggle="modal" data-bs-target="#whatsappModal">
+                        <i class="fab fa-whatsapp"></i> Compartilhar
+                    </button>
+                </div>
+                
+                <!-- Seção de comentários -->
+                <div class="mt-4">
+                    <button class="btn btn-link btn-ver-comentarios" data-post-id="{{ postagem.id }}">
+                        <i class="fas fa-comments"></i> Ver comentários ({{ postagem.comentarios|length }})
+                    </button>
+                    
+                    <div class="comentarios-container mt-3" id="comentarios-{{ postagem.id }}" style="display: none;">
+                        {% for comentario in postagem.comentarios %}
+                        <div class="card mb-2">
+                            <div class="card-body">
+                                <div class="d-flex align-items-start">
+                                    <img src="{{ url_for('static', filename=comentario.autor.foto) }}" 
+                                         class="rounded-circle foto-perfil-click me-2" 
+                                         width="40" height="40" 
+                                         style="object-fit: cover; cursor: pointer;"
+                                         data-user-id="{{ comentario.autor.id }}">
+                                    <div>
+                                        <strong>{{ comentario.autor.nome }}</strong>
+                                        <small class="text-muted ms-2">{{ comentario.data.strftime('%d/%m %H:%M') }}</small>
+                                        <p class="mt-1 mb-1">{{ comentario.texto }}</p>
+                                        {% if comentario.audio %}
+                                        <audio controls class="mt-2">
+                                            <source src="{{ url_for('static', filename=comentario.audio) }}" type="audio/webm">
+                                        </audio>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        
+                        {% if current_user.is_authenticated %}
+                        <form action="{{ url_for('adicionar_comentario', post_id=postagem.id) }}" method="POST" class="mt-3">
+                            <div class="mb-2">
+                                <textarea name="texto" class="form-control" rows="2" placeholder="Escreva seu comentário..."></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">Comentar</button>
+                            <button type="button" class="btn btn-secondary btn-sm btn-gravar-audio" data-post-id="{{ postagem.id }}">
+                                <i class="fas fa-microphone"></i> Gravar Áudio (10s)
+                            </button>
+                        </form>
+                        <div class="audio-recorder mt-2" id="recorder-{{ postagem.id }}" style="display: none;">
+                            <button class="btn btn-danger btn-sm btn-stop-recording">Parar</button>
+                            <span class="ms-2 text-muted">Gravando... Máx 10s</span>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mt-2">
+                            <a href="{{ url_for('login') }}">Faça login</a> ou <a href="{{ url_for('cadastro_foto') }}">cadastre-se</a> para comentar.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info text-center">
+            Nenhuma postagem ainda. Volte em breve!
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Modal Compartilhar WhatsApp -->
+<div class="modal fade" id="whatsappModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fab fa-whatsapp"></i> Compartilhar no WhatsApp</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="form-compartilhar">
+                    <div class="mb-3">
+                        <label>Mensagem personalizada</label>
+                        <textarea class="form-control" id="msg-personalizada" rows="3" placeholder="Digite sua mensagem..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label>Número do WhatsApp (opcional)</label>
+                        <input type="text" class="form-control" id="numero-whatsapp" placeholder="5511999999999">
+                    </div>
+                    <input type="hidden" id="post-id-share">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="btn-enviar-whatsapp">
+                    <i class="fab fa-whatsapp"></i> Compartilhar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // Tô só Observando
+    $('.btn-observar').click(function() {
+        const btn = $(this);
+        const postId = btn.data('post-id');
+        
+        $.ajax({
+            url: `/post/${postId}/visualizar`,
+            method: 'POST',
+            success: function(data) {
+                if (data.success) {
+                    btn.find('.badge').text(data.visualizacoes);
+                    btn.prop('disabled', true);
+                    btn.html('<i class="fas fa-check"></i> Observado! ' + data.visualizacoes);
+                } else {
+                    alert('Você já observou esta postagem!');
+                }
+            }
+        });
+    });
+    
+    // Ver comentários
+    $('.btn-ver-comentarios').click(function() {
+        const postId = $(this).data('post-id');
+        $(`#comentarios-${postId}`).slideToggle();
+    });
+    
+    // Compartilhar
+    $('.btn-compartilhar').click(function() {
+        const postId = $(this).data('post-id');
+        $('#post-id-share').val(postId);
+    });
+    
+    $('#btn-enviar-whatsapp').click(function() {
+        const postId = $('#post-id-share').val();
+        const mensagem = $('#msg-personalizada').val();
+        const numero = $('#numero-whatsapp').val();
+        
+        $.ajax({
+            url: `/compartilhar/${postId}`,
+            method: 'POST',
+            data: {
+                mensagem_personalizada: mensagem,
+                numero_whatsapp: numero
+            },
+            success: function(data) {
+                window.open(data.link, '_blank');
+                $('#whatsappModal').modal('hide');
+            }
+        });
+    });
+    
+    // Gravação de áudio simples (10s)
+    let mediaRecorder;
+    let audioChunks = [];
+    
+    function iniciarGravacao(postId) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'audio.webm');
+                    // Aqui você pode implementar o envio para o comentário específico
+                    alert('Áudio gravado! (Funcionalidade em desenvolvimento)');
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                setTimeout(() => {
+                    if(mediaRecorder && mediaRecorder.state === 'recording') {
+                        mediaRecorder.stop();
+                    }
+                }, 10000);
+            });
+    }
+    
+    $('.btn-gravar-audio').click(function() {
+        const postId = $(this).data('post-id');
+        iniciarGravacao(postId);
+    });
+});
+</script>
+{% endblock %}
