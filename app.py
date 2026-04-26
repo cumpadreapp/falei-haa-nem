@@ -11,7 +11,15 @@ import base64
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'sua-chave-secreta-mvp-falei-haa-nemm'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///falei_haa_nemm.db'
+
+import os
+# ... (outras configurações)
+
+# --- ALTERE ESTA LINHA ---
+# Caminho absoluto para o arquivo do banco de dados no servidor
+db_path = os.path.join(os.path.dirname(__file__), 'falei_haa_nemm.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+# --------------------------
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
