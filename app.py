@@ -11,8 +11,8 @@ import base64
 
 # ==================== CONFIGURAÇÕES ====================
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-padrao-para-producao')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///falei_haa_nemm.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'snapdeploy-chave-secreta-2026')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///falei_haa_nemm.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
