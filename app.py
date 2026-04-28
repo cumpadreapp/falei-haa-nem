@@ -8,21 +8,16 @@ import json
 import random
 import string
 import base64
-from io import BytesIO
-from PIL import Image
-import re
 
 # ==================== CONFIGURAÇÕES ====================
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-padrao-para-desenvolvimento')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///falei_haa_nemm.db')
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-padrao-para-producao')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///falei_haa_nemm.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# Criar pastas de upload
+# Criar pastas de upload (se não existirem)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'fotos_perfil'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'postagens'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'audios_comentarios'), exist_ok=True)
@@ -44,9 +39,6 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
 
-    comentarios = db.relationship('Comentario', backref='autor', lazy=True)
-    visualizacoes = db.relationship('Visualizacao', backref='usuario', lazy=True)
-
     def get_redes(self):
         return json.loads(self.redes_sociais) if self.redes_sociais else {}
 
@@ -64,9 +56,6 @@ class Postagem(db.Model):
     visualizacoes = db.Column(db.Integer, default=0)
     relevancia = db.Column(db.Integer, default=0)
     data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    comentarios = db.relationship('Comentario', backref='postagem', lazy=True)
-    visualizacoes_usuarios = db.relationship('Visualizacao', backref='postagem', lazy=True)
 
 class Comentario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -115,15 +104,9 @@ def marcar_visualizacao(post_id):
         session['session_id'] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
     session_id = session['session_id']
     user_id = current_user.id if current_user.is_authenticated else None
-    visualizacao_existente = Visualizacao.query.filter_by(
-        postagem_id=post_id, session_id=session_id
-    ).first()
+    visualizacao_existente = Visualizacao.query.filter_by(postagem_id=post_id, session_id=session_id).first()
     if not visualizacao_existente and (not user_id or not Visualizacao.query.filter_by(postagem_id=post_id, user_id=user_id).first()):
-        nova_visualizacao = Visualizacao(
-            user_id=user_id,
-            postagem_id=post_id,
-            session_id=session_id
-        )
+        nova_visualizacao = Visualizacao(user_id=user_id, postagem_id=post_id, session_id=session_id)
         db.session.add(nova_visualizacao)
         postagem.visualizacoes += 1
         postagem.relevancia = postagem.visualizacoes + (len(postagem.comentarios) * 2)
@@ -139,11 +122,7 @@ def adicionar_comentario(post_id):
         return redirect(url_for('index'))
     postagem = Postagem.query.get_or_404(post_id)
     texto = request.form.get('texto', '')
-    novo_comentario = Comentario(
-        texto=texto,
-        user_id=current_user.id,
-        postagem_id=post_id
-    )
+    novo_comentario = Comentario(texto=texto, user_id=current_user.id, postagem_id=post_id)
     db.session.add(novo_comentario)
     db.session.commit()
     postagem.relevancia = postagem.visualizacoes + (len(postagem.comentarios) * 2)
@@ -249,12 +228,7 @@ def confirmar_whatsapp():
             with open(filepath, 'wb') as f:
                 f.write(img_bytes)
             foto_path = f"uploads/fotos_perfil/{filename}"
-        novo_usuario = User(
-            nome=f"Usuário_{telefone[-4:]}",
-            telefone=telefone,
-            foto=foto_path,
-            biografia="Novo usuário da rede!"
-        )
+        novo_usuario = User(nome=f"Usuário_{telefone[-4:]}", telefone=telefone, foto=foto_path, biografia="Novo usuário da rede!")
         db.session.add(novo_usuario)
         db.session.commit()
         login_user(novo_usuario)
@@ -304,7 +278,7 @@ def admin_required(func):
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
-    postagens = Postagem.query.order_by(Postagem.data_criacao.desc()).all()
+    postagens = Postagem.query.all()
     usuarios = User.query.all()
     banner = Banner.query.first()
     stats = {
@@ -345,13 +319,7 @@ def nova_postagem():
     conteudo_texto = request.form.get('conteudo_texto', '')
     link_youtube = request.form.get('link_youtube', '')
     localizacao = request.form.get('localizacao', '')
-    nova_post = Postagem(
-        tipo=tipo,
-        titulo=titulo,
-        conteudo=conteudo_texto,
-        link_youtube=link_youtube,
-        localizacao=localizacao
-    )
+    nova_post = Postagem(tipo=tipo, titulo=titulo, conteudo=conteudo_texto, link_youtube=link_youtube, localizacao=localizacao)
     if tipo in ['foto', 'video', 'audio'] and 'arquivo' in request.files:
         arquivo = request.files['arquivo']
         if arquivo.filename:
