@@ -1,86 +1,98 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.utils import secure_filename
-from models import db, User, Postagem, Comentario, Visualizacao, Banner
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import json
 import random
 import string
 import base64
+from io import BytesIO
+from PIL import Image
+import re
 
+# ==================== CONFIGURAÇÕES ====================
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'sua-chave-secreta-mvp-falei-haa-nemm'
-
-import os
-# ... (outras configurações)
-
-# --- ALTERE ESTA LINHA ---
-# Caminho absoluto para o arquivo do banco de dados no servidor
-db_path = os.path.join(os.path.dirname(__file__), 'falei_haa_nemm.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-# --------------------------
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-secreta-padrao-para-desenvolvimento')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///falei_haa_nemm.db')
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# Pastas de upload
+# Criar pastas de upload
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'fotos_perfil'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'postagens'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'audios_comentarios'), exist_ok=True)
 
-db.init_app(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+login_manager.login_message = 'Faça login para continuar'
 
-# ========== CONFIGURAÇÃO DO TWILIO (com fallback) ==========
-TWILIO_ACTIVE = False
-try:
-    from twilio.rest import Client
-    TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', 'SEU_ACCOUNT_SID')
-    TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', 'SEU_AUTH_TOKEN')
-    TWILIO_VERIFY_SERVICE_SID = os.environ.get('TWILIO_VERIFY_SERVICE_SID', 'SEU_SERVICE_SID')
+# ==================== MODELOS ====================
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False, default='Usuário')
+    telefone = db.Column(db.String(20), unique=True, nullable=False)
+    foto = db.Column(db.String(200), default='default.png')
+    biografia = db.Column(db.Text, default='')
+    redes_sociais = db.Column(db.Text, default='{}')
+    data_cadastro = db.Column(db.DateTime, default=datetime.utcnow)
+    is_admin = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
+
+    comentarios = db.relationship('Comentario', backref='autor', lazy=True)
+    visualizacoes = db.relationship('Visualizacao', backref='usuario', lazy=True)
+
+    def get_redes(self):
+        return json.loads(self.redes_sociais) if self.redes_sociais else {}
+
+    def set_redes(self, dados):
+        self.redes_sociais = json.dumps(dados)
+
+class Postagem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    titulo = db.Column(db.String(200))
+    tipo = db.Column(db.String(20), default='texto')
+    conteudo = db.Column(db.Text)
+    arquivo = db.Column(db.String(200))
+    link_youtube = db.Column(db.String(200))
+    localizacao = db.Column(db.String(200))
+    visualizacoes = db.Column(db.Integer, default=0)
+    relevancia = db.Column(db.Integer, default=0)
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
     
-    if TWILIO_ACCOUNT_SID != 'SEU_ACCOUNT_SID' and TWILIO_AUTH_TOKEN != 'SEU_AUTH_TOKEN' and TWILIO_VERIFY_SERVICE_SID != 'SEU_SERVICE_SID':
-        twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        TWILIO_ACTIVE = True
-        print("Twilio configurado para envio real de WhatsApp")
-    else:
-        print("Twilio não configurado – usando modo de simulação")
-except ImportError:
-    print("Biblioteca Twilio não instalada – usando modo de simulação")
-except Exception as e:
-    print(f"Erro ao configurar Twilio: {e} – usando modo de simulação")
+    comentarios = db.relationship('Comentario', backref='postagem', lazy=True)
+    visualizacoes_usuarios = db.relationship('Visualizacao', backref='postagem', lazy=True)
+
+class Comentario(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    texto = db.Column(db.Text)
+    audio = db.Column(db.String(200))
+    data = db.Column(db.DateTime, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    postagem_id = db.Column(db.Integer, db.ForeignKey('postagem.id'))
+
+class Visualizacao(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    postagem_id = db.Column(db.Integer, db.ForeignKey('postagem.id'))
+    session_id = db.Column(db.String(100))
+    data = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Banner(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    imagem = db.Column(db.String(200))
+    link = db.Column(db.String(300))
+    ativo = db.Column(db.Boolean, default=True)
+    data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
-
-def criar_admin_padrao():
-    with app.app_context():
-        admin = User.query.filter_by(is_admin=True).first()
-        if not admin:
-            admin = User(
-                nome='Administrador',
-                telefone='admin',
-                foto='default.png',
-                biografia='Administrador do sistema',
-                is_admin=True,
-                is_active=True
-            )
-            db.session.add(admin)
-            db.session.commit()
-
-def admin_required(func):
-    from functools import wraps
-    @wraps(func)
-    def decorated_view(*args, **kwargs):
-        if not current_user.is_authenticated or not current_user.is_admin:
-            flash('Acesso negado. Área administrativa.', 'danger')
-            return redirect(url_for('index'))
-        return func(*args, **kwargs)
-    return decorated_view
 
 # ==================== ROTAS PRINCIPAIS ====================
 @app.route('/')
@@ -139,26 +151,6 @@ def adicionar_comentario(post_id):
     flash('Comentário adicionado!', 'success')
     return redirect(url_for('index'))
 
-@app.route('/comentario/<int:comentario_id>/audio', methods=['POST'])
-@login_required
-def adicionar_audio_comentario(comentario_id):
-    comentario = Comentario.query.get_or_404(comentario_id)
-    if comentario.user_id != current_user.id:
-        flash('Você só pode editar seus próprios comentários', 'danger')
-        return redirect(url_for('index'))
-    if 'audio' not in request.files:
-        flash('Nenhum arquivo', 'danger')
-        return redirect(url_for('index'))
-    audio = request.files['audio']
-    if audio.filename:
-        filename = secure_filename(f"audio_{comentario_id}_{datetime.now().timestamp()}.webm")
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'audios_comentarios', filename)
-        audio.save(filepath)
-        comentario.audio = f"uploads/audios_comentarios/{filename}"
-        db.session.commit()
-        flash('Áudio adicionado!', 'success')
-    return redirect(url_for('index'))
-
 @app.route('/compartilhar/<int:post_id>', methods=['POST'])
 def compartilhar_whatsapp(post_id):
     postagem = Postagem.query.get_or_404(post_id)
@@ -169,7 +161,19 @@ def compartilhar_whatsapp(post_id):
     link = f"https://wa.me/{numero}?text={texto}" if numero else f"https://wa.me/?text={texto}"
     return jsonify({'success': True, 'link': link})
 
-# ==================== AUTENTICAÇÃO E CADASTRO ====================
+@app.route('/usuario/<int:user_id>/dados')
+def usuario_dados(user_id):
+    user = User.query.get_or_404(user_id)
+    return jsonify({
+        'nome': user.nome,
+        'foto': url_for('static', filename=user.foto),
+        'biografia': user.biografia,
+        'telefone': user.telefone,
+        'redes': user.get_redes(),
+        'data_cadastro': user.data_cadastro.strftime('%d/%m/%Y')
+    })
+
+# ==================== AUTENTICAÇÃO ====================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -214,31 +218,14 @@ def cadastro_whatsapp():
         telefone = request.form.get('telefone')
         if not telefone.startswith('+'):
             telefone = '+' + telefone
-
         if User.query.filter_by(telefone=telefone).first():
             flash('Número já cadastrado!', 'danger')
             return redirect(url_for('cadastro_whatsapp'))
-
-        if TWILIO_ACTIVE:
-            try:
-                verification = twilio_client.verify.services(TWILIO_VERIFY_SERVICE_SID) \
-                    .verifications.create(to=telefone, channel='whatsapp')
-                if verification.status == 'pending':
-                    session['temp_telefone'] = telefone
-                    flash(f'Código enviado para {telefone}.', 'success')
-                    return redirect(url_for('confirmar_whatsapp'))
-                else:
-                    flash('Erro ao enviar código. Tente novamente.', 'danger')
-            except Exception as e:
-                flash(f'Erro na API do WhatsApp: {str(e)}', 'danger')
-        else:
-            # Modo simulação: gerar código e mostrar na tela
-            codigo = ''.join(random.choices(string.digits, k=6))
-            session['temp_telefone'] = telefone
-            session['temp_codigo'] = codigo
-            flash(f'[SIMULAÇÃO] Código de verificação: {codigo}', 'info')
-            return redirect(url_for('confirmar_whatsapp'))
-
+        codigo = ''.join(random.choices(string.digits, k=6))
+        session['temp_telefone'] = telefone
+        session['temp_codigo'] = codigo
+        flash(f'[SIMULAÇÃO] Código de verificação: {codigo}', 'info')
+        return redirect(url_for('confirmar_whatsapp'))
     return render_template('cadastro_whatsapp.html')
 
 @app.route('/cadastro/confirmar', methods=['GET', 'POST'])
@@ -246,28 +233,12 @@ def confirmar_whatsapp():
     if request.method == 'POST':
         codigo_digitado = request.form.get('codigo')
         telefone = session.get('temp_telefone')
-
         if not telefone:
             flash('Sessão expirada, reinicie o cadastro.', 'danger')
             return redirect(url_for('cadastro_whatsapp'))
-
-        if TWILIO_ACTIVE:
-            try:
-                verification_check = twilio_client.verify.services(TWILIO_VERIFY_SERVICE_SID) \
-                    .verification_checks.create(to=telefone, code=codigo_digitado)
-                if verification_check.status != 'approved':
-                    flash('Código inválido. Tente novamente.', 'danger')
-                    return redirect(url_for('confirmar_whatsapp'))
-            except Exception as e:
-                flash(f'Erro na verificação: {str(e)}', 'danger')
-                return redirect(url_for('confirmar_whatsapp'))
-        else:
-            # Modo simulação: compara o código armazenado na sessão
-            if codigo_digitado != session.get('temp_codigo'):
-                flash('Código inválido.', 'danger')
-                return redirect(url_for('confirmar_whatsapp'))
-
-        # Cria o usuário (código aprovado)
+        if codigo_digitado != session.get('temp_codigo'):
+            flash('Código inválido.', 'danger')
+            return redirect(url_for('confirmar_whatsapp'))
         foto_base64 = session.get('temp_foto')
         foto_path = 'default.png'
         if foto_base64:
@@ -278,7 +249,6 @@ def confirmar_whatsapp():
             with open(filepath, 'wb') as f:
                 f.write(img_bytes)
             foto_path = f"uploads/fotos_perfil/{filename}"
-
         novo_usuario = User(
             nome=f"Usuário_{telefone[-4:]}",
             telefone=telefone,
@@ -287,15 +257,12 @@ def confirmar_whatsapp():
         )
         db.session.add(novo_usuario)
         db.session.commit()
-
         login_user(novo_usuario)
         session.pop('temp_telefone', None)
         session.pop('temp_codigo', None)
         session.pop('temp_foto', None)
-
         flash('Cadastro realizado com sucesso!', 'success')
         return redirect(url_for('perfil'))
-
     return render_template('confirmar_whatsapp.html')
 
 @app.route('/perfil', methods=['GET', 'POST'])
@@ -323,19 +290,17 @@ def perfil():
     redes = current_user.get_redes()
     return render_template('perfil.html', usuario=current_user, redes=redes)
 
-@app.route('/usuario/<int:user_id>/dados')
-def usuario_dados(user_id):
-    user = User.query.get_or_404(user_id)
-    return jsonify({
-        'nome': user.nome,
-        'foto': url_for('static', filename=user.foto),
-        'biografia': user.biografia,
-        'telefone': user.telefone,
-        'redes': user.get_redes(),
-        'data_cadastro': user.data_cadastro.strftime('%d/%m/%Y')
-    })
+# ==================== ADMIN ====================
+def admin_required(func):
+    from functools import wraps
+    @wraps(func)
+    def decorated_view(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            flash('Acesso negado. Área administrativa.', 'danger')
+            return redirect(url_for('index'))
+        return func(*args, **kwargs)
+    return decorated_view
 
-# ==================== ADMIN: GERENCIAR BANNER E POSTAGENS ====================
 @app.route('/admin')
 @admin_required
 def admin_dashboard():
@@ -413,7 +378,6 @@ def excluir_postagem(post_id):
     flash('Postagem excluída!', 'success')
     return redirect(url_for('admin_dashboard'))
 
-# ==================== ADMIN: GERENCIAR USUÁRIOS ====================
 @app.route('/admin/usuarios')
 @admin_required
 def admin_usuarios():
@@ -468,7 +432,6 @@ def admin_excluir_usuario(user_id):
         flash('Usuário excluído!', 'success')
     return redirect(url_for('admin_usuarios'))
 
-# ==================== ADMIN: GERENCIAR COMENTÁRIOS ====================
 @app.route('/admin/comentarios')
 @admin_required
 def admin_comentarios():
@@ -493,9 +456,27 @@ def admin_excluir_comentario(comentario_id):
     flash('Comentário excluído', 'success')
     return redirect(url_for('admin_comentarios'))
 
+# ==================== CRIAÇÃO DO ADMIN PADRÃO ====================
+def criar_admin_padrao():
+    with app.app_context():
+        admin = User.query.filter_by(is_admin=True).first()
+        if not admin:
+            admin = User(
+                nome='Administrador',
+                telefone='admin',
+                foto='default.png',
+                biografia='Administrador do sistema',
+                is_admin=True,
+                is_active=True
+            )
+            db.session.add(admin)
+            db.session.commit()
+            print("Admin padrão criado com sucesso!")
+
 # ==================== INICIALIZAÇÃO ====================
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         criar_admin_padrao()
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
