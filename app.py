@@ -3,26 +3,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.utils import secure_filename
 from datetime import datetime
-
-
-from app import app, db
-from models import User, Postagem, Comentario, Visualizacao, Banner
-
-with app.app_context():
-    db.create_all()
-    print("Tabelas criadas com sucesso!")
-    
-    # Verificar se as tabelas foram criadas
-    from sqlalchemy import inspect
-    inspector = inspect(db.engine)
-    print("Tabelas existentes:", inspector.get_table_names())
-    
-    # Criar admin se não existir
-    if not User.query.filter_by(is_admin=True).first():
-        admin = User(nome='Administrador', telefone='admin', is_admin=True)
-        db.session.add(admin)
-        db.session.commit()
-        print("Admin criado!")
 import os
 import json
 import random
