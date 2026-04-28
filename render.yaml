@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: falei-haa-nemm
+    runtime: python
+    repo: https://github.com/cumpadreapp/SEU_REPOSITORIO
+    plan: free
+    region: oregon
+    buildCommand: ""
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
