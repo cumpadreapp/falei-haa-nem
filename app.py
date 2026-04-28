@@ -17,7 +17,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-# Criar pastas de upload (se não existirem)
+# Criar pastas de upload
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'fotos_perfil'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'postagens'), exist_ok=True)
 os.makedirs(os.path.join(app.config['UPLOAD_FOLDER'], 'audios_comentarios'), exist_ok=True)
@@ -39,6 +39,9 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
 
+    comentarios = db.relationship('Comentario', backref='autor', lazy=True)
+    visualizacoes = db.relationship('Visualizacao', backref='usuario', lazy=True)
+
     def get_redes(self):
         return json.loads(self.redes_sociais) if self.redes_sociais else {}
 
@@ -56,6 +59,9 @@ class Postagem(db.Model):
     visualizacoes = db.Column(db.Integer, default=0)
     relevancia = db.Column(db.Integer, default=0)
     data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    comentarios = db.relationship('Comentario', backref='postagem', lazy=True)
+    visualizacoes_usuarios = db.relationship('Visualizacao', backref='postagem', lazy=True)
 
 class Comentario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -81,7 +87,7 @@ class Banner(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 # ==================== ROTAS PRINCIPAIS ====================
 @app.route('/')
@@ -99,14 +105,25 @@ def index():
 
 @app.route('/post/<int:post_id>/visualizar', methods=['POST'])
 def marcar_visualizacao(post_id):
-    postagem = Postagem.query.get_or_404(post_id)
+    postagem = db.session.get(Postagem, post_id)
+    if not postagem:
+        return jsonify({'success': False, 'message': 'Postagem não encontrada'})
+    
     if not session.get('session_id'):
         session['session_id'] = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
     session_id = session['session_id']
     user_id = current_user.id if current_user.is_authenticated else None
-    visualizacao_existente = Visualizacao.query.filter_by(postagem_id=post_id, session_id=session_id).first()
+    
+    visualizacao_existente = Visualizacao.query.filter_by(
+        postagem_id=post_id, session_id=session_id
+    ).first()
+    
     if not visualizacao_existente and (not user_id or not Visualizacao.query.filter_by(postagem_id=post_id, user_id=user_id).first()):
-        nova_visualizacao = Visualizacao(user_id=user_id, postagem_id=post_id, session_id=session_id)
+        nova_visualizacao = Visualizacao(
+            user_id=user_id,
+            postagem_id=post_id,
+            session_id=session_id
+        )
         db.session.add(nova_visualizacao)
         postagem.visualizacoes += 1
         postagem.relevancia = postagem.visualizacoes + (len(postagem.comentarios) * 2)
@@ -120,11 +137,21 @@ def adicionar_comentario(post_id):
     if not current_user.is_active:
         flash('Sua conta está bloqueada. Contate o administrador.', 'danger')
         return redirect(url_for('index'))
-    postagem = Postagem.query.get_or_404(post_id)
+    
+    postagem = db.session.get(Postagem, post_id)
+    if not postagem:
+        flash('Postagem não encontrada', 'danger')
+        return redirect(url_for('index'))
+    
     texto = request.form.get('texto', '')
-    novo_comentario = Comentario(texto=texto, user_id=current_user.id, postagem_id=post_id)
+    novo_comentario = Comentario(
+        texto=texto,
+        user_id=current_user.id,
+        postagem_id=post_id
+    )
     db.session.add(novo_comentario)
     db.session.commit()
+    
     postagem.relevancia = postagem.visualizacoes + (len(postagem.comentarios) * 2)
     db.session.commit()
     flash('Comentário adicionado!', 'success')
@@ -132,7 +159,10 @@ def adicionar_comentario(post_id):
 
 @app.route('/compartilhar/<int:post_id>', methods=['POST'])
 def compartilhar_whatsapp(post_id):
-    postagem = Postagem.query.get_or_404(post_id)
+    postagem = db.session.get(Postagem, post_id)
+    if not postagem:
+        return jsonify({'success': False, 'message': 'Postagem não encontrada'})
+    
     mensagem = request.form.get('mensagem_personalizada', '')
     numero = request.form.get('numero_whatsapp', '')
     texto = f"{mensagem}\n\n{postagem.titulo}\n{postagem.conteudo}\n\nCompartilhado do Falei, haa Nemm!"
@@ -142,7 +172,9 @@ def compartilhar_whatsapp(post_id):
 
 @app.route('/usuario/<int:user_id>/dados')
 def usuario_dados(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
     return jsonify({
         'nome': user.nome,
         'foto': url_for('static', filename=user.foto),
@@ -171,6 +203,7 @@ def login():
                     flash('Conta bloqueada', 'danger')
                 else:
                     login_user(usuario)
+                    flash(f'Bem-vindo, {usuario.nome}!', 'success')
                     return redirect(url_for('index'))
             else:
                 flash('Número não cadastrado', 'danger')
@@ -180,6 +213,7 @@ def login():
 @login_required
 def logout():
     logout_user()
+    flash('Você saiu do sistema', 'info')
     return redirect(url_for('index'))
 
 @app.route('/cadastro/foto', methods=['GET', 'POST'])
@@ -218,6 +252,7 @@ def confirmar_whatsapp():
         if codigo_digitado != session.get('temp_codigo'):
             flash('Código inválido.', 'danger')
             return redirect(url_for('confirmar_whatsapp'))
+        
         foto_base64 = session.get('temp_foto')
         foto_path = 'default.png'
         if foto_base64:
@@ -228,7 +263,13 @@ def confirmar_whatsapp():
             with open(filepath, 'wb') as f:
                 f.write(img_bytes)
             foto_path = f"uploads/fotos_perfil/{filename}"
-        novo_usuario = User(nome=f"Usuário_{telefone[-4:]}", telefone=telefone, foto=foto_path, biografia="Novo usuário da rede!")
+        
+        novo_usuario = User(
+            nome=f"Usuário_{telefone[-4:]}",
+            telefone=telefone,
+            foto=foto_path,
+            biografia="Novo usuário da rede!"
+        )
         db.session.add(novo_usuario)
         db.session.commit()
         login_user(novo_usuario)
@@ -261,6 +302,7 @@ def perfil():
         db.session.commit()
         flash('Perfil atualizado!', 'success')
         return redirect(url_for('perfil'))
+    
     redes = current_user.get_redes()
     return render_template('perfil.html', usuario=current_user, redes=redes)
 
@@ -295,6 +337,7 @@ def atualizar_banner():
     if 'imagem' not in request.files:
         flash('Selecione uma imagem', 'danger')
         return redirect(url_for('admin_dashboard'))
+    
     imagem = request.files['imagem']
     if imagem.filename:
         filename = secure_filename(f"banner_{datetime.now().timestamp()}.jpg")
@@ -319,7 +362,15 @@ def nova_postagem():
     conteudo_texto = request.form.get('conteudo_texto', '')
     link_youtube = request.form.get('link_youtube', '')
     localizacao = request.form.get('localizacao', '')
-    nova_post = Postagem(tipo=tipo, titulo=titulo, conteudo=conteudo_texto, link_youtube=link_youtube, localizacao=localizacao)
+    
+    nova_post = Postagem(
+        tipo=tipo,
+        titulo=titulo,
+        conteudo=conteudo_texto,
+        link_youtube=link_youtube,
+        localizacao=localizacao
+    )
+    
     if tipo in ['foto', 'video', 'audio'] and 'arquivo' in request.files:
         arquivo = request.files['arquivo']
         if arquivo.filename:
@@ -327,6 +378,7 @@ def nova_postagem():
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], 'postagens', filename)
             arquivo.save(filepath)
             nova_post.arquivo = f"uploads/postagens/{filename}"
+    
     db.session.add(nova_post)
     db.session.commit()
     flash('Postagem criada!', 'success')
@@ -335,7 +387,11 @@ def nova_postagem():
 @app.route('/admin/postagem/<int:post_id>/excluir', methods=['POST'])
 @admin_required
 def excluir_postagem(post_id):
-    postagem = Postagem.query.get_or_404(post_id)
+    postagem = db.session.get(Postagem, post_id)
+    if not postagem:
+        flash('Postagem não encontrada', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     if postagem.arquivo:
         try:
             os.remove(os.path.join(app.config['UPLOAD_FOLDER'], postagem.arquivo))
@@ -355,7 +411,11 @@ def admin_usuarios():
 @app.route('/admin/usuario/<int:user_id>/editar', methods=['POST'])
 @admin_required
 def admin_editar_usuario(user_id):
-    usuario = User.query.get_or_404(user_id)
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        flash('Usuário não encontrado', 'danger')
+        return redirect(url_for('admin_usuarios'))
+    
     usuario.nome = request.form.get('nome')
     usuario.biografia = request.form.get('biografia')
     db.session.commit()
@@ -365,7 +425,11 @@ def admin_editar_usuario(user_id):
 @app.route('/admin/usuario/<int:user_id>/toggle_admin', methods=['POST'])
 @admin_required
 def admin_toggle_admin(user_id):
-    usuario = User.query.get_or_404(user_id)
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        flash('Usuário não encontrado', 'danger')
+        return redirect(url_for('admin_usuarios'))
+    
     if usuario.id == current_user.id:
         flash('Não pode remover seu próprio admin', 'danger')
     else:
@@ -377,7 +441,11 @@ def admin_toggle_admin(user_id):
 @app.route('/admin/usuario/<int:user_id>/toggle_block', methods=['POST'])
 @admin_required
 def admin_toggle_block(user_id):
-    usuario = User.query.get_or_404(user_id)
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        flash('Usuário não encontrado', 'danger')
+        return redirect(url_for('admin_usuarios'))
+    
     if usuario.id == current_user.id:
         flash('Não pode bloquear a si mesmo', 'danger')
     else:
@@ -389,7 +457,11 @@ def admin_toggle_block(user_id):
 @app.route('/admin/usuario/<int:user_id>/excluir', methods=['POST'])
 @admin_required
 def admin_excluir_usuario(user_id):
-    usuario = User.query.get_or_404(user_id)
+    usuario = db.session.get(User, user_id)
+    if not usuario:
+        flash('Usuário não encontrado', 'danger')
+        return redirect(url_for('admin_usuarios'))
+    
     if usuario.id == current_user.id:
         flash('Não pode excluir a si mesmo', 'danger')
     else:
@@ -409,18 +481,25 @@ def admin_comentarios():
 @app.route('/admin/comentario/<int:comentario_id>/excluir', methods=['POST'])
 @admin_required
 def admin_excluir_comentario(comentario_id):
-    comentario = Comentario.query.get_or_404(comentario_id)
+    comentario = db.session.get(Comentario, comentario_id)
+    if not comentario:
+        flash('Comentário não encontrado', 'danger')
+        return redirect(url_for('admin_comentarios'))
+    
     if comentario.audio:
         try:
             os.remove(os.path.join(app.config['UPLOAD_FOLDER'], comentario.audio))
         except:
             pass
+    
     postagem = comentario.postagem
     db.session.delete(comentario)
     db.session.commit()
+    
     if postagem:
         postagem.relevancia = postagem.visualizacoes + (len(postagem.comentarios) * 2)
         db.session.commit()
+    
     flash('Comentário excluído', 'success')
     return redirect(url_for('admin_comentarios'))
 
